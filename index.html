@@ -72,6 +72,8 @@ function exportPdiReport(){
   rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','']);
   emitted.add(day.date);
  }
+ const detailRows=rows.slice(6).sort((a,b)=>new Date(a[0])-new Date(b[0]));
+ rows.splice(6,rows.length-6,...detailRows);
  const end=rows.length;const last='S'+Math.max(6,end);
  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
  const report=wb.Sheets['Daily PDI Report'];
