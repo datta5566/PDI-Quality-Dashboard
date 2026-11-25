@@ -65,6 +65,13 @@ function exportPdiReport(){
   const checked=first&&day?Number(day.checked):null,ok=first&&day?checked-day.nok:null,nok=first&&day?day.nok:null,ppm=first&&day&&checked?day.nok/checked*1000000:null;
   rows.push([dt,checked,ok,nok,ppm,sourceRow[ix.ipo]??'',sourceRow[ix.item]??'',sourceRow[ix.barcode]??'',sourceRow[ix.unit]??'',sourceRow[ix.reason]??'','','','REJECTION','','','','','','']);
  }
+ // Add production/checking dates that have zero rejection records as well.
+ for(const day of days){
+  if(emitted.has(day.date))continue;
+  const dt=new Date(day.date+'T00:00:00'),checked=Number(day.checked),nok=Number(day.nok||0);
+  rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','']);
+  emitted.add(day.date);
+ }
  const end=rows.length;const last='S'+Math.max(6,end);
  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
  const report=wb.Sheets['Daily PDI Report'];
