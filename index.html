@@ -51,10 +51,10 @@ function exportPdiReport(){
  const wb=XLSX.utils.book_new(),ws={};
  const monthDate=new Date(days[0].date+'T00:00:00');
  const summaryChecked=days.reduce((s,d)=>s+Number(d.checked),0),summaryNok=days.reduce((s,d)=>s+d.nok,0),summaryOk=summaryChecked-summaryNok;
- const header=['DATE','TOTAL CHECKED','TOTAL OK','TOTAL NOK','PPM','IPO','REJECT PART NAME','BARCODE','UNIT OF MFG','ISSUE / PROBLEM','REQUIRED','RECEIVED','REJ / REW','REMARKS','NCR No.','CORRECTION','CORRECTIVE ACTION','STATUS','INSPECTOR'];
+ const header=['DATE','TOTAL CHECKED','TOTAL OK','TOTAL NOK','PPM','WIDTH','ITEM','LENGTH','IPO','REJECT PART NAME','BARCODE','UNIT OF MFG','ISSUE / PROBLEM','REQUIRED','RECEIVED','REJ / REW','REMARKS','NCR No.','CORRECTION','CORRECTIVE ACTION','STATUS','INSPECTOR'];
  const rows=[['SUMMARY',null,null,null,null,null,null,'DAILY PDI REPORT'],['MONTH','TOTAL CHECKED','TOTAL OK','TOTAL NOK','% REJN.','PPM'],[monthDate,summaryChecked,summaryOk,summaryNok,summaryChecked?summaryNok/summaryChecked:0,summaryChecked?summaryNok/summaryChecked*1000000:0],[],['REJECTED / REWORK PART DETAILS'],header];
  const h=(rawRejectionMatrix[1]||[]).map(normHead);
- const ix={date:h.findIndex(x=>x==='DATE'),qty:h.findIndex(x=>x==='QTY'||x==='QUANTITY'),ipo:h.findIndex(x=>x==='IPO'),item:h.findIndex(x=>x==='ITEM'),barcode:h.findIndex(x=>x==='BARCODE'),unit:h.findIndex(x=>x==='UNIT'),reason:h.findIndex(x=>x==='REJECTIONREASON'||x==='REWORKREASON')};
+ const ix={date:h.findIndex(x=>x==='DATE'),width:h.findIndex(x=>x==='WIDTH'),length:h.findIndex(x=>x==='LENGTH'),qty:h.findIndex(x=>x==='QTY'||x==='QUANTITY'),ipo:h.findIndex(x=>x==='IPO'),item:h.findIndex(x=>x==='ITEM'),barcode:h.findIndex(x=>x==='BARCODE'),unit:h.findIndex(x=>x==='UNIT'),reason:h.findIndex(x=>x==='REJECTIONREASON'||x==='REWORKREASON')};
  const checkedByDate=new Map(days.map(d=>[d.date,d]));
  const emitted=new Set();
  for(const sourceRow of rawRejectionMatrix.slice(2)){
@@ -63,13 +63,13 @@ function exportPdiReport(){
   const key=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
   const day=checkedByDate.get(key);const first=!emitted.has(key);emitted.add(key);
   const checked=first&&day?Number(day.checked):null,ok=first&&day?checked-day.nok:null,nok=first&&day?day.nok:null,ppm=first&&day&&checked?day.nok/checked*1000000:null;
-  rows.push([dt,checked,ok,nok,ppm,sourceRow[ix.ipo]??'',sourceRow[ix.item]??'',sourceRow[ix.barcode]??'',sourceRow[ix.unit]??'',sourceRow[ix.reason]??'','','','REJECTION','','','','','','']);
+  rows.push([dt,checked,ok,nok,ppm,sourceRow[ix.width]??'',sourceRow[ix.item]??'',sourceRow[ix.length]??'',sourceRow[ix.ipo]??'',sourceRow[ix.item]??'',sourceRow[ix.barcode]??'',sourceRow[ix.unit]??'',sourceRow[ix.reason]??'','','','REJECTION','','','','','','']);
  }
  // Add production/checking dates that have zero rejection records as well.
  for(const day of days){
   if(emitted.has(day.date))continue;
   const dt=new Date(day.date+'T00:00:00'),checked=Number(day.checked),nok=Number(day.nok||0);
-  rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','']);
+  rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','','','']);
   emitted.add(day.date);
  }
  const detailRows=rows.slice(6).sort((a,b)=>new Date(a[0])-new Date(b[0]));
@@ -77,13 +77,13 @@ function exportPdiReport(){
  const end=rows.length;const last='S'+Math.max(6,end);
  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
  const report=wb.Sheets['Daily PDI Report'];
- report['!merges']=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:0,c:7},e:{r:0,c:11}},{s:{r:4,c:0},e:{r:4,c:18}}];
- report['!cols']=[{wch:13},{wch:14},{wch:12},{wch:12},{wch:11},{wch:10},{wch:22},{wch:16},{wch:14},{wch:28},{wch:12},{wch:12},{wch:12},{wch:18},{wch:12},{wch:16},{wch:20},{wch:14},{wch:16}];
+ report['!merges']=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:0,c:7},e:{r:0,c:11}},{s:{r:4,c:0},e:{r:4,c:21}}];
+ report['!cols']=[{wch:13},{wch:14},{wch:12},{wch:12},{wch:11},{wch:10},{wch:18},{wch:12},{wch:10},{wch:22},{wch:16},{wch:14},{wch:28},{wch:12},{wch:12},{wch:12},{wch:18},{wch:12},{wch:16},{wch:20},{wch:14},{wch:16}];
  report['!rows']=[{hpt:28},{hpt:30},{hpt:24},{hpt:8},{hpt:24},{hpt:42}];
- for(let R=0;R<rows.length;R++)for(let C=0;C<19;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(!report[a])continue;report[a].s=R===0?cellStyle('111827','FFFFFF',true,'center',15):R===1||R===5?cellStyle('D6B52B','111827',true,'center',10):R===4?cellStyle('111827','FFFFFF',true,'center',12):R===2?cellStyle('F1F5F9','111827',true,'center',10):cellStyle(R%2?'FFFFFF':'F1F5F9','111827',false,'center',9)}
+ for(let R=0;R<rows.length;R++)for(let C=0;C<22;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(!report[a])continue;report[a].s=R===0?cellStyle('111827','FFFFFF',true,'center',15):R===1||R===5?cellStyle('D6B52B','111827',true,'center',10):R===4?cellStyle('111827','FFFFFF',true,'center',12):R===2?cellStyle('F1F5F9','111827',true,'center',10):cellStyle(R%2?'FFFFFF':'F1F5F9','111827',false,'center',9)}
  for(let r=6;r<rows.length;r++){const dateCell=report['A'+(r+1)];if(dateCell)dateCell.z='dd/mm/yyyy';const p=report['E'+(r+1)];if(p)p.z='0.00';}
  if(report['A3'])report['A3'].z='mmm-yy';if(report['E3'])report['E3'].z='0.00%';if(report['F3'])report['F3'].z='0.00';
- report['!autofilter']={ref:'A6:S'+Math.max(6,end)};report['!freeze']={xSplit:0,ySplit:6};
+ report['!autofilter']={ref:'A6:V'+Math.max(6,end)};report['!freeze']={xSplit:0,ySplit:6};
  const rejectionSheet=XLSX.utils.aoa_to_sheet(rawRejectionMatrix);
  rejectionSheet['!cols']=(rawRejectionMatrix[1]||[]).map(()=>({wch:18}));
  rejectionSheet['!autofilter']={ref:'A2:M'+rawRejectionMatrix.length};rejectionSheet['!freeze']={xSplit:0,ySplit:2};
