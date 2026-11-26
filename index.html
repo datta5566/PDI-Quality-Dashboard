@@ -48,61 +48,52 @@ function exportPdiReport(){
  if(!days.length){alert('Read a workbook first.');return}
  if(days.some(d=>d.checked===''||d.checked===null||!Number.isFinite(Number(d.checked))||Number(d.checked)<d.nok)){alert('Enter valid Total Checked for every date; it must not be less than NOK.');return}
  if(!rawRejectionMatrix.length){alert('Original REJECTION data is not available. Re-upload the workbook.');return}
- const wb=XLSX.utils.book_new(),header=['DATE','TOTAL CHECKED','TOTAL OK','TOTAL NOK','PPM','WIDTH','ITEM','LENGTH','IPO','BARCODE','UNIT OF MFG','ISSUE / PROBLEM','REQUIRED','RECEIVED','REJ / REW','REMARKS','NCR No.','CORRECTION','CORRECTIVE ACTION','STATUS','INSPECTOR'];
- let sourceHeaderRow=-1;
- for(let r=0;r<Math.min(rawRejectionMatrix.length,20);r++){const h=(rawRejectionMatrix[r]||[]).map(normHead);if(h.includes('DATE')&&h.some(x=>['QTY','QUANTITY'].includes(x))){sourceHeaderRow=r;break}}
- if(sourceHeaderRow<0)throw Error('REJECTION sheet DATE/QTY header row could not be identified.');
+ const wb=XLSX.utils.book_new(),ws={};
+ const monthDate=new Date(days[0].date+'T00:00:00');
+ const summaryChecked=days.reduce((s,d)=>s+Number(d.checked),0),summaryNok=days.reduce((s,d)=>s+d.nok,0),summaryOk=summaryChecked-summaryNok;
+ const header=['DATE','TOTAL CHECKED','TOTAL OK','TOTAL NOK','PPM','WIDTH','ITEM','LENGTH','IPO','BARCODE','UNIT OF MFG','ISSUE / PROBLEM','REQUIRED','RECEIVED','REJ / REW','REMARKS','NCR No.','CORRECTION','CORRECTIVE ACTION','STATUS','INSPECTOR'];
+ const rows=[['SUMMARY',null,null,null,null,null,null,'DAILY PDI REPORT'],['MONTH','TOTAL CHECKED','TOTAL OK','TOTAL NOK','% REJN.','PPM'],[monthDate,summaryChecked,summaryOk,summaryNok,summaryChecked?summaryNok/summaryChecked:0,summaryChecked?summaryNok/summaryChecked*1000000:0],[],['REJECTED / REWORK PART DETAILS'],header];
+ let sourceHeaderRow=-1;for(let r=0;r<Math.min(rawRejectionMatrix.length,20);r++){const candidate=(rawRejectionMatrix[r]||[]).map(normHead);if(candidate.includes('DATE')&&candidate.some(x=>x==='QTY'||x==='QUANTITY')){sourceHeaderRow=r;break;}}
+ if(sourceHeaderRow<0)throw Error('REJECTION sheet DATE/QTY header row could not be identified for export.');
  const h=(rawRejectionMatrix[sourceHeaderRow]||[]).map(normHead);
- const ix={date:h.findIndex(x=>x==='DATE'),width:h.findIndex(x=>x==='WIDTH'),length:h.findIndex(x=>x==='LENGTH'),qty:h.findIndex(x=>x==='QTY'||x==='QUANTITY'),ipo:h.findIndex(x=>x==='IPO'),item:h.findIndex(x=>x==='ITEM'),barcode:h.findIndex(x=>x==='BARCODE'),unit:h.findIndex(x=>x==='UNIT'||x==='UNITOFMFG'),reason:h.findIndex(x=>['REJECTIONREASON','REWORKREASON','ISSUE/PROBLEM','ISSUEPROBLEM'].includes(x))};
- const dayMap=new Map(days.map(d=>[d.date,d])),groups=new Map();
- for(const sr of rawRejectionMatrix.slice(sourceHeaderRow+1)){
-  if(!sr||!sr.some(v=>v!==null&&v!==''))continue;
-  const dt=parseDateCell(sr[ix.date]);if(!dt)continue;
+ const ix={date:h.findIndex(x=>x==='DATE'),width:h.findIndex(x=>x==='WIDTH'),length:h.findIndex(x=>x==='LENGTH'),qty:h.findIndex(x=>x==='QTY'||x==='QUANTITY'),ipo:h.findIndex(x=>x==='IPO'),item:h.findIndex(x=>x==='ITEM'),barcode:h.findIndex(x=>x==='BARCODE'),unit:h.findIndex(x=>x==='UNIT'||x==='UNITOFMFG'),reason:h.findIndex(x=>x==='REJECTIONREASON'||x==='REWORKREASON'||x==='ISSUE/PROBLEM'||x==='ISSUEPROBLEM')};
+ const checkedByDate=new Map(days.map(d=>[d.date,d]));
+ const emitted=new Set();
+ for(const sourceRow of rawRejectionMatrix.slice(sourceHeaderRow+1)){
+  if(!sourceRow||!sourceRow.some(v=>v!==null&&v!==''))continue;
+  const dt=parseDateCell(sourceRow[ix.date]);if(!dt)continue;
   const key=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-  if(!groups.has(key))groups.set(key,[]);
-  groups.get(key).push(sr);
+  const day=checkedByDate.get(key);const first=!emitted.has(key);emitted.add(key);
+  const checked=first&&day?Number(day.checked):null,ok=first&&day?checked-day.nok:null,nok=first&&day?day.nok:null,ppm=first&&day&&checked?day.nok/checked*1000000:null;
+  rows.push([first?dt:'',checked,ok,nok,ppm,sourceRow[ix.width]??'',sourceRow[ix.item]??'',sourceRow[ix.length]??'',sourceRow[ix.ipo]??'',sourceRow[ix.barcode]??'',sourceRow[ix.unit]??'',sourceRow[ix.reason]??'','','','REJECTION','','','','','','']);
  }
- const dates=[...dayMap.keys()].sort(),checked=days.reduce((s,d)=>s+Number(d.checked),0),nok=days.reduce((s,d)=>s+d.nok,0),ok=checked-nok,ppm=checked?nok/checked*1000000:0;
- const rejectionTotal=days.reduce((s,d)=>s+d.count,0),periodStart=dates[0]||'',periodEnd=dates[dates.length-1]||'';
- const reasonCounts=new Map();
- for(const sr of rawRejectionMatrix.slice(sourceHeaderRow+1)){
-  const reason=ix.reason>=0?String(sr[ix.reason]??'').trim():'';
-  if(reason)reasonCounts.set(reason,(reasonCounts.get(reason)||0)+1);
+ // Add production/checking dates that have zero rejection records as well.
+ for(const day of days){
+  if(emitted.has(day.date))continue;
+  const dt=new Date(day.date+'T00:00:00'),checked=Number(day.checked),nok=Number(day.nok||0);
+  rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','','','']);
+  emitted.add(day.date);
  }
- const topReasons=[...reasonCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
- const rows=Array.from({length:15},()=>Array(21).fill(''));
- rows[0][0]='KNEST ALUFORM';rows[0][8]='QUALITY MANAGEMENT SYSTEM';rows[1][0]='DAILY PDI QUALITY REPORT';
- rows[2][0]='REPORT PERIOD';rows[2][1]=periodStart?new Date(periodStart+'T00:00:00'):'';rows[2][3]='TO';rows[2][4]=periodEnd?new Date(periodEnd+'T00:00:00'):'';
- rows[2][7]='REPORT NO.';rows[2][9]='PDI/'+(periodStart?periodStart.slice(0,7).replace('-','/'):'MONTH')+'/001';rows[2][13]='REVISION';rows[2][15]='00';rows[2][17]='GENERATED';rows[2][19]=new Date();
- const cardCols=[[0,3],[4,7],[8,11],[12,15],[16,20]],cardLabels=['TOTAL CHECKED','TOTAL OK','TOTAL NOK','REJECTION %','PPM'],cardValues=[checked,ok,nok,checked? nok/checked:0,ppm];
- cardCols.forEach(([a,b],i)=>{rows[4][a]=cardLabels[i];rows[5][a]=cardValues[i]});
- rows[7][0]='TOP REJECTION REASONS';rows[7][5]='MONTHLY QUALITY SUMMARY';rows[7][12]='ACTION / FOLLOW-UP';
- rows[8][0]='DEFECT REASON';rows[8][3]='COUNT';topReasons.forEach((x,i)=>{rows[9+i][0]=x[0];rows[9+i][3]=x[1]});
- rows[8][5]='METRIC';rows[8][8]='VALUE';rows[9][5]='Working / Report Days';rows[9][8]=days.length;rows[10][5]='Rejection Records';rows[10][8]=rejectionTotal;rows[11][5]='Total Rework / Rejection Qty';rows[11][8]=nok;rows[12][5]='Data Validation Issues';rows[12][8]=issues.length;
- rows[8][12]='CORRECTION / CORRECTIVE ACTION';rows[9][12]='';rows[10][12]='';rows[11][12]='';rows[12][12]='';
- rows[14]=header;
- const detailStart=rows.length,merges=[];
- for(const key of dates){
-  const d=dayMap.get(key),records=groups.get(key)||[];
-  if(!records.length){const dt=new Date(key+'T00:00:00');rows.push([dt,Number(d.checked),Number(d.checked)-d.nok,d.nok,d.checked?d.nok/Number(d.checked)*1000000:0,'','','','','','','','','','','','','','','','']);continue}
-  records.forEach((sr,i)=>{const dt=new Date(key+'T00:00:00');rows.push([i===0?dt:'',i===0?Number(d.checked):'',i===0?Number(d.checked)-d.nok:'',i===0?d.nok:'',i===0&&d.checked?d.nok/Number(d.checked)*1000000:'',ix.width>=0?sr[ix.width]??'':'',ix.item>=0?sr[ix.item]??'':'',ix.length>=0?sr[ix.length]??'':'',ix.ipo>=0?sr[ix.ipo]??'':'',ix.barcode>=0?sr[ix.barcode]??'':'',ix.unit>=0?sr[ix.unit]??'':'',ix.reason>=0?sr[ix.reason]??'':'','','','REJECTION','','','','','',''])});
-  if(records.length>1)merges.push({s:{r:detailStart+rows.length-detailStart-records.length,c:0},e:{r:rows.length-1,c:0}});
- }
- const detailEnd=rows.length;
- rows.push(Array(21).fill(''));rows.push(['PREPARED BY','','','','','CHECKED BY','','','','','APPROVED BY']);rows.push(['QC INSPECTOR','','','','','QUALITY REPRESENTATIVE','','','','','HOD QUALITY']);
- const ws=XLSX.utils.aoa_to_sheet(rows);XLSX.utils.book_append_sheet(wb,ws,'Daily PDI Report');
- const style=(fill,fg='111827',bold=false,size=9,align='center')=>({fill:{fgColor:{rgb:fill}},font:{name:'Arial',sz:size,bold,color:{rgb:fg}},alignment:{horizontal:align,vertical:'center',wrapText:true},border:{top:{style:'thin',color:{rgb:'AAB2BD'}},bottom:{style:'thin',color:{rgb:'AAB2BD'}},left:{style:'thin',color:{rgb:'AAB2BD'}},right:{style:'thin',color:{rgb:'AAB2BD'}}}});
- ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:7}},{s:{r:0,c:8},e:{r:0,c:20}},{s:{r:1,c:0},e:{r:1,c:20}},{s:{r:7,c:0},e:{r:7,c:3}},{s:{r:7,c:5},e:{r:7,c:10}},{s:{r:7,c:12},e:{r:7,c:20}},{s:{r:8,c:0},e:{r:8,c:2}},{s:{r:8,c:3},e:{r:8,c:4}},{s:{r:8,c:5},e:{r:8,c:7}},{s:{r:8,c:8},e:{r:8,c:10}},{s:{r:8,c:12},e:{r:8,c:20}},{s:{r:9,c:12},e:{r:9,c:20}},{s:{r:10,c:12},e:{r:10,c:20}},{s:{r:11,c:12},e:{r:11,c:20}},{s:{r:12,c:12},e:{r:12,c:20}},...cardCols.map(([a,b])=>({s:{r:4,c:a},e:{r:4,c:b}})),...cardCols.map(([a,b])=>({s:{r:5,c:a},e:{r:5,c:b}})),...merges,{s:{r:detailEnd+1,c:0},e:{r:detailEnd+1,c:4}},{s:{r:detailEnd+1,c:5},e:{r:detailEnd+1,c:9}},{s:{r:detailEnd+1,c:10},e:{r:detailEnd+1,c:14}}];
- ws['!cols']=[{wch:15},{wch:16},{wch:14},{wch:14},{wch:13},{wch:12},{wch:20},{wch:12},{wch:12},{wch:17},{wch:15},{wch:28},{wch:13},{wch:13},{wch:13},{wch:18},{wch:13},{wch:17},{wch:22},{wch:14},{wch:16}];
- ws['!rows']=rows.map((_,i)=>({hpt:i===0?25:i===1?34:i===4?22:i===5?30:i===7?23:i===14?42:i>=detailEnd?28:i<14?20:28}));
- for(let R=0;R<rows.length;R++)for(let C=0;C<21;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(!ws[a])continue;let s;if(R===0)s=style('111827','FFFFFF',true,13);else if(R===1)s=style('B51F2A','FFFFFF',true,17);else if(R===2)s=style('E8EDF3','111827',true,9);else if(R===4)s=style('D6B52B','111827',true,9);else if(R===5)s=style('FFF4CC','111827',true,15);else if(R===7)s=style('111827','FFFFFF',true,10);else if(R===8||R===14)s=style('D6B52B','111827',true,9);else if(R>=detailStart&&R<detailEnd)s=style((R-detailStart)%2?'FFFFFF':'F1F5F9','111827',false,8);else if(R>=detailEnd)s=style('E8EDF3','111827',true,9);else s=style('F8FAFC','111827',false,9);ws[a].s=s}
- if(ws['B3'])ws['B3'].z='dd-mmm-yyyy';if(ws['E3'])ws['E3'].z='dd-mmm-yyyy';if(ws['T3'])ws['T3'].z='dd-mmm-yyyy';if(ws['M6'])ws['M6'].z='0.00%';if(ws['Q6'])ws['Q6'].z='#,##0.00';
- for(let r=detailStart;r<detailEnd;r++){if(ws['A'+(r+1)]&&ws['A'+(r+1)].v)ws['A'+(r+1)].z='dd-mmm-yyyy';if(ws['E'+(r+1)])ws['E'+(r+1)].z='#,##0.00'}
- if(ws['I10'])ws['I10'].z='#,##0';if(ws['I11'])ws['I11'].z='#,##0';if(ws['I12'])ws['I12'].z='#,##0';
- ws['!autofilter']={ref:'A15:U'+Math.max(15,detailEnd)};ws['!freeze']={xSplit:0,ySplit:15};ws['!pageSetup']={orientation:'landscape',paperSize:9,fitToWidth:1,fitToHeight:0};ws['!margins']={left:0.2,right:0.2,top:0.35,bottom:0.35,header:0.15,footer:0.15};ws['!printArea']='A1:U'+(detailEnd+3);ws['!printOptions']={horizontalCentered:false,verticalCentered:false};
- const raw=XLSX.utils.aoa_to_sheet(rawRejectionMatrix);raw['!cols']=(rawRejectionMatrix[sourceHeaderRow]||[]).map(()=>({wch:18}));raw['!autofilter']={ref:'A'+(sourceHeaderRow+1)+':'+XLSX.utils.encode_col(Math.max(0,(rawRejectionMatrix[sourceHeaderRow]||[]).length-1))+(rawRejectionMatrix.length)};raw['!freeze']={xSplit:0,ySplit:sourceHeaderRow+1};for(let C=0;C<(rawRejectionMatrix[sourceHeaderRow]||[]).length;C++){const a=XLSX.utils.encode_cell({r:sourceHeaderRow,c:C});if(raw[a])raw[a].s=style('D6B52B','111827',true,9)}raw['!pageSetup']={orientation:'landscape',paperSize:9,fitToWidth:1,fitToHeight:0};raw['!margins']={left:0.25,right:0.25,top:0.5,bottom:0.5};
- XLSX.utils.book_append_sheet(wb,raw,'REJECTION DATA');
- XLSX.writeFile(wb,sourceName+'_Professional_PDI_Quality_Report.xlsx');
+ const detailRows=rows.slice(6).sort((a,b)=>new Date(a[0])-new Date(b[0]));
+ rows.splice(6,rows.length-6,...detailRows);
+ const end=rows.length;const last='S'+Math.max(6,end);
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
+ const report=wb.Sheets['Daily PDI Report'];
+ const dateMerges=[];let dateGroupStart=6;for(let i=7;i<=rows.length;i++){if(i===rows.length||rows[i][0]!==''){if(i-dateGroupStart>1)dateMerges.push({s:{r:dateGroupStart,c:0},e:{r:i-1,c:0}});dateGroupStart=i;}}
+ report['!merges']=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:0,c:7},e:{r:0,c:11}},{s:{r:4,c:0},e:{r:4,c:20}},...dateMerges];
+ report['!cols']=[{wch:16},{wch:20},{wch:16},{wch:16},{wch:15},{wch:10},{wch:18},{wch:12},{wch:10},{wch:16},{wch:14},{wch:28},{wch:12},{wch:12},{wch:12},{wch:18},{wch:12},{wch:16},{wch:20},{wch:14},{wch:16}];
+ report['!rows']=[{hpt:28},{hpt:30},{hpt:24},{hpt:8},{hpt:24},{hpt:42}];
+ for(let R=0;R<rows.length;R++)for(let C=0;C<21;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(!report[a])continue;report[a].s=R===0?cellStyle('111827','FFFFFF',true,'center',15):R===1||R===5?cellStyle('D6B52B','111827',true,'center',10):R===4?cellStyle('111827','FFFFFF',true,'center',12):R===2?cellStyle('F1F5F9','111827',true,'center',10):cellStyle(R%2?'FFFFFF':'F1F5F9','111827',false,'center',9)}
+ for(let r=6;r<rows.length;r++){const dateCell=report['A'+(r+1)];if(dateCell){dateCell.t='d';dateCell.z='dd-mmm-yyyy';}const p=report['E'+(r+1)];if(p)p.z='0.00';}
+ if(report['A3'])report['A3'].z='mmm-yy';if(report['E3'])report['E3'].z='0.00%';if(report['F3'])report['F3'].z='0.00';
+ report['!autofilter']={ref:'A6:U'+Math.max(6,end)};report['!freeze']={xSplit:0,ySplit:6};
+ report['!pageSetup']={orientation:'landscape',paperSize:9,fitToWidth:1,fitToHeight:0};report['!margins']={left:0.25,right:0.25,top:0.5,bottom:0.5,header:0.2,footer:0.2};report['!printArea']='A1:U'+Math.max(6,end);report['!printOptions']={horizontalCentered:false,verticalCentered:false};
+ const rejectionSheet=XLSX.utils.aoa_to_sheet(rawRejectionMatrix);
+ rejectionSheet['!cols']=(rawRejectionMatrix[1]||[]).map(()=>({wch:18}));
+ rejectionSheet['!autofilter']={ref:'A2:M'+rawRejectionMatrix.length};rejectionSheet['!freeze']={xSplit:0,ySplit:2};
+ for(let C=0;C<(rawRejectionMatrix[1]||[]).length;C++){const a=XLSX.utils.encode_cell({r:1,c:C});if(rejectionSheet[a])rejectionSheet[a].s=cellStyle('D6B52B','111827',true,'center',10)}
+ XLSX.utils.book_append_sheet(wb,rejectionSheet,'REJECTION DATA');
+ XLSX.writeFile(wb,sourceName+'_Daily_PDI_and_Rejection_Report.xlsx');
 }
 $('export').textContent='DOWNLOAD DAILY PDI + COMPLETE REJECTION REPORT';
 $('export').onclick=exportPdiReport;
