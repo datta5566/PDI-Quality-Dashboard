@@ -77,7 +77,7 @@ function exportPdiReport(){
  const end=rows.length;const last='S'+Math.max(6,end);
  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
  const report=wb.Sheets['Daily PDI Report'];
- const dateMerges=[];let dateGroupStart=6;for(let i=7;i<=rows.length;i++){if(i===rows.length||rows[i][0]!==''){if(i-dateGroupStart>1){for(let col=0;col<=4;col++)dateMerges.push({s:{r:dateGroupStart,c:col},e:{r:i-1,c:col}});}dateGroupStart=i;}}
+ const dateMerges=[];let dateGroupStart=6;for(let i=7;i<=rows.length;i++){if(i===rows.length||rows[i][0]!==''){if(i-dateGroupStart>1)dateMerges.push({s:{r:dateGroupStart,c:0},e:{r:i-1,c:0}});dateGroupStart=i;}}
  report['!merges']=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:0,c:7},e:{r:0,c:11}},{s:{r:4,c:0},e:{r:4,c:20}},...dateMerges];
  report['!cols']=[{wch:14},{wch:14},{wch:12},{wch:12},{wch:11},{wch:10},{wch:18},{wch:12},{wch:10},{wch:16},{wch:14},{wch:28},{wch:12},{wch:12},{wch:12},{wch:18},{wch:12},{wch:16},{wch:20},{wch:14},{wch:16}];
  report['!rows']=[{hpt:28},{hpt:30},{hpt:24},{hpt:8},{hpt:24},{hpt:42}];
