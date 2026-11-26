@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDI Rejection Automation</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#090b10;--panel:#141923;--line:#2b3442;--red:#ef343c;--muted:#9aa5b4}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% 0%,#35151b,transparent 35%),var(--bg);color:#f5f6f8;font:14px Arial,sans-serif}.wrap{max-width:1200px;margin:auto;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:10px 0 22px}.brand{display:flex;gap:14px;align-items:center}.logo{background:linear-gradient(140deg,#ff454c,#a80f1a);padding:14px;border-radius:12px;font-weight:bold}.tag{border:1px solid var(--line);border-radius:30px;padding:9px 13px;color:#b8c0cb;font-size:11px}.hero{padding:30px 0}.eyebrow{color:#ff626a;letter-spacing:2px;font-size:11px;font-weight:bold}.hero h1{font-size:clamp(28px,4vw,44px);margin:8px 0}.hero em{color:var(--red);font-style:normal}.muted{color:var(--muted)}.panel{background:linear-gradient(140deg,#171d28,#10141b);border:1px solid var(--line);border-radius:14px;padding:22px;margin:16px 0}.drop{border:1px dashed #687386;border-radius:12px;padding:28px;text-align:center;margin:16px 0;background:#0d1118}button{background:linear-gradient(110deg,#fa4149,#bd202c);border:0;color:white;border-radius:8px;padding:12px 18px;font-weight:bold;cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}input[type=number]{width:125px;background:#090d14;border:1px solid #465164;border-radius:6px;color:white;padding:9px}input[type=file]{max-width:100%}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{background:#0d1118;border:1px solid var(--line);padding:16px;border-radius:10px}.card b{display:block;font-size:24px;margin-top:8px}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line)}th{color:#ff777e;font-size:11px} .table{overflow:auto}footer{padding:25px 0;color:var(--muted);font-size:12px}@media(max-width:700px){.wrap{padding:14px}.cards{grid-template-columns:repeat(2,1fr)}.top{align-items:flex-start;gap:10px;flex-direction:column}}
+</style></head><body><div class="wrap"><header class="top"><div class="brand"><div class="logo">PDI</div><div><b>PDI AUTOMATION</b><div class="muted">Rejection → Daily PPM Report</div></div></div><div class="tag">● ONLINE BROWSER WORKSPACE</div></header>
+<section class="hero"><div class="eyebrow">QUALITY MANAGEMENT SYSTEM</div><h1>Daily PDI <em>Control Center</em></h1><div class="muted">Upload Excel, enter daily checked quantity and generate a PPM report.</div></section>
+<section class="panel"><h2>01 · Upload Monthly Excel</h2><div class="drop"><input id="file" type="file" accept=".xls,.xlsx,.xlsm"><p class="muted">REJECTION sheet: DATE + QTY. NOV PPM sheet: DATE + TOTAL CHECKED for automatic PPM calculation.</p></div><div id="passwordBox" hidden style="margin:14px 0;padding:16px;border:1px solid #ef343c;border-radius:10px;background:#211318"><label for="excelPassword"><b>🔐 Excel Password Required</b></label><p class="muted">This workbook is encrypted. Enter its opening password to unlock it.</p><input id="excelPassword" type="password" autocomplete="off" placeholder="Enter Excel file password" style="width:min(100%,360px);padding:11px;background:#090d14;color:white;border:1px solid #465164;border-radius:7px"><button id="unlock" type="button">UNLOCK & READ</button><div class="muted" style="margin-top:8px;font-size:12px">Password is processed in your browser and is not saved or uploaded.</div></div><button id="read">READ REJECTION DATA</button> <span id="status" class="muted">Select a workbook to begin.</span></section>
+<section class="cards"><div class="card">REJECTION RECORDS<b id="records">—</b></div><div class="card">REPORT DATES<b id="dates">—</b></div><div class="card">TOTAL NOK<b id="nok">—</b></div><div class="card">DATA ISSUES<b id="issues">—</b></div></section>
+<section class="panel"><h2>02 · Daily Production Entry</h2><p class="muted">Enter Total Checked for each date. OK = Checked − NOK. PPM = NOK ÷ Checked × 1,000,000.</p><div class="table"><table><thead><tr><th>DATE</th><th>REJECTION RECORDS</th><th>TOTAL NOK</th><th>TOTAL CHECKED</th><th>TOTAL OK</th><th>PPM</th></tr></thead><tbody id="rows"><tr><td colspan="6" class="muted">Upload a workbook to begin.</td></tr></tbody></table></div></section>
+<section class="panel"><h2>03 · Export PPM Report</h2><button id="export" disabled>DOWNLOAD PPM EXCEL REPORT</button><p class="muted">Workbook is processed in this browser. It is not uploaded to the hosting server.</p></section><footer>PDI REJECTION AUTOMATION · Browser-based processing · Keep an untouched backup of the original workbook.</footer></div>
+<script>
+let days=[],issues=[],sourceName='pdi',selectedFile=null,rawRejectionMatrix=[];
+const $=id=>document.getElementById(id),fmt=n=>Number(n||0).toLocaleString('en-IN');
+function normHead(v){return String(v??'').trim().toUpperCase().replace(/[\s_\-\.]/g,'')}function parseDateCell(v){if(v instanceof Date&&!isNaN(v))return new Date(v.getFullYear(),v.getMonth(),v.getDate());if(typeof v==='number'){const p=XLSX.SSF.parse_date_code(v);if(p)return new Date(p.y,p.m-1,p.d)}if(typeof v==='string'){const s=v.trim(),m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);if(m){const a=+m[1],b=+m[2];let y=+m[3];if(y<100)y+=y<50?2000:1900;const day=a>12?a:b,month=a>12?b:a;const d=new Date(y,month-1,day);return d.getFullYear()===y&&d.getMonth()===month-1&&d.getDate()===day?d:null}const d=new Date(s);if(!isNaN(d))return new Date(d.getFullYear(),d.getMonth(),d.getDate())}return null}function extractRecords(matrix){if(!Array.isArray(matrix)||!matrix.length)throw Error('REJECTION worksheet is empty');let headerAt=-1,dateAt=-1,qtyAt=-1;for(let r=0;r<Math.min(matrix.length,20);r++){const h=(matrix[r]||[]).map(normHead),di=h.findIndex(x=>['DATE','INSPECTIONDATE','REJECTIONDATE'].includes(x)),qi=h.findIndex(x=>['QTY','QUANTITY','REJECTIONQTY','NOKQTY'].includes(x));if(di>=0&&qi>=0){headerAt=r;dateAt=di;qtyAt=qi;break}}if(headerAt<0)throw Error('DATE और QTY/QUANTITY headers पहली 20 rows में नहीं मिले।');return matrix.slice(headerAt+1).map(row=>({DATE:row?.[dateAt],QTY:row?.[qtyAt]})).filter(x=>(x.DATE!==null&&x.DATE!==undefined&&x.DATE!=='')||(x.QTY!==null&&x.QTY!==undefined&&x.QTY!==''))}function checkedRecords(matrix){const norm=v=>String(v??'').trim().toUpperCase().replace(/[\s_\-\.]/g,'');let header=-1,di=-1,ci=-1;for(let r=0;r<Math.min(matrix.length,25);r++){const h=(matrix[r]||[]).map(norm);const d=h.findIndex(x=>x==='DATE'||x==='PDATE');const q=h.findIndex(x=>x==='TOTALCHECKED'||x==='CHECKED'||x==='TOTALCHECKEDQTY');if(d>=0&&q>=0){header=r;di=d;ci=q;break}}if(header<0)return new Map();const out=new Map();for(const row of matrix.slice(header+1)){const dt=parseDateCell(row?.[di]);const val=Number(String(row?.[ci]??'').replace(/,/g,'').trim());if(!dt||row?.[ci]===null||row?.[ci]===''||!Number.isFinite(val)||val<0)continue;out.set(String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'),val)}return out}function processData(data,f,checkedMap=new Map()){
+ if(!data.length)throw Error('REJECTION worksheet is empty');
+ const map=new Map();issues=[];
+ const years=data.map(r=>parseDateCell(r.DATE)).filter(Boolean).map(d=>d.getFullYear());
+ const reportYear=years.length?years.sort((a,b)=>years.filter(x=>x===a).length-years.filter(x=>x===b).length).pop():new Date().getFullYear();
+ data.forEach((r,i)=>{
+  const date=parseDateCell(r.DATE),raw=String(r.QTY??'').replace(/,/g,'').trim(),q=Number(raw);
+  if(!date){issues.push('Invalid or blank date at data row '+(i+1));return}
+  if(raw===''||!Number.isFinite(q)||q<0){issues.push('Invalid or blank QTY at data row '+(i+1));return}
+  const key=date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+  if(!map.has(key))map.set(key,{date:key,nok:0,count:0,checked:''});
+  const x=map.get(key);x.nok+=q;x.count++;
+ });
+ for(const [md,checked] of checkedMap){
+  const [m,d]=md.split('-').map(Number),dt=new Date(reportYear,m-1,d);
+  if(dt.getMonth()!==m-1||dt.getDate()!==d)continue;
+  const key=dt.getFullYear()+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+  if(!map.has(key))map.set(key,{date:key,nok:0,count:0,checked:''});
+  map.get(key).checked=checked;
+ }
+ days=[...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
+ sourceName=f.name.replace(/\.(xlsx|xlsm|xls)$/i,'');
+ render();$('passwordBox').hidden=true;$('excelPassword').value='';
+ const auto=days.filter(d=>d.checked!=='').length;
+ $('status').textContent='Imported '+data.length+' REJECTION rows; '+auto+' daily checked quantities matched from NOV PPM. Invalid rows: '+issues.length+'.';
+}async function readWorkbook(password){const f=selectedFile;if(!f)throw Error('Please select an Excel workbook.');const bytes=await f.arrayBuffer();const sig=new Uint8Array(bytes,0,4);const encrypted=sig.length===4&&sig[0]===0xD0&&sig[1]===0xCF&&sig[2]===0x11&&sig[3]===0xE0;if(encrypted){if(!password){$('passwordBox').hidden=false;$('status').textContent='Password-protected Excel detected. Enter password below.';return}$('status').textContent='Decrypting locally in your browser…';const {readXlsx}=await import('https://esm.sh/hucre@1.3.0/xlsx');const book=await readXlsx(new Uint8Array(bytes),{password});const sheet=book.sheets.find(s=>s.name.trim().toUpperCase()==='REJECTION');if(!sheet)throw Error('REJECTION worksheet not found');const rows=sheet.rows||[];if(!rows.length)throw Error('REJECTION worksheet is empty');rawRejectionMatrix=rows;const data=extractRecords(rows);const ppmSheet=book.sheets.find(s=>s.name.trim().toUpperCase()==='NOV PPM');const checked=ppmSheet?checkedRecords(ppmSheet.rows||[]):new Map();processData(data,f,checked);return}const wb=XLSX.read(bytes,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames.find(n=>n.trim().toUpperCase()==='REJECTION')];if(!ws)throw Error('REJECTION worksheet not found');rawRejectionMatrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});const ppmName=wb.SheetNames.find(n=>n.trim().toUpperCase()==='NOV PPM');const checked=ppmName?checkedRecords(XLSX.utils.sheet_to_json(wb.Sheets[ppmName],{header:1,defval:null,raw:true})):new Map();processData(extractRecords(XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true})),f,checked)}
+$('file').onchange=()=>{selectedFile=$('file').files[0]||null;$('passwordBox').hidden=true;$('excelPassword').value='';$('status').textContent=selectedFile?'Selected: '+selectedFile.name:'Select a workbook to begin.'};
+$('read').onclick=async()=>{selectedFile=$('file').files[0]||null;if(!selectedFile){$('status').textContent='Please select an Excel workbook.';return}try{await readWorkbook('')}catch(e){$('status').textContent='Could not read workbook: '+(e.message||'Unknown error');if(/password|decrypt|encrypted/i.test(e.message||''))$('passwordBox').hidden=false}};
+$('unlock').onclick=async()=>{const password=$('excelPassword').value;if(!password){$('status').textContent='Enter the Excel password first.';return}try{$('unlock').disabled=true;await readWorkbook(password)}catch(e){$('status').textContent='Unlock failed. Check the password or encryption type. '+(e.message||'');$('passwordBox').hidden=false}finally{$('unlock').disabled=false}};
+function render(){$('records').textContent=fmt(days.reduce((s,d)=>s+d.count,0));$('dates').textContent=fmt(days.length);$('nok').textContent=fmt(days.reduce((s,d)=>s+d.nok,0));$('issues').textContent=fmt(issues.length);$('rows').innerHTML=days.map((d,i)=>'<tr><td>'+d.date+'</td><td>'+fmt(d.count)+'</td><td>'+fmt(d.nok)+'</td><td><input type="number" min="0" data-i="'+i+'" value="'+(d.checked!==''?d.checked:'')+'" placeholder="Enter qty"></td><td id="ok'+i+'">'+(d.checked!==''?fmt(d.checked-d.nok):'—')+'</td><td id="ppm'+i+'">'+(d.checked!==''&&d.checked>0?fmt(d.nok/d.checked*1e6):'—')+'</td></tr>').join('');document.querySelectorAll('[data-i]').forEach(el=>el.oninput=()=>{let d=days[+el.dataset.i],v=el.value===''?null:Number(el.value);d.checked=v;$('ok'+el.dataset.i).textContent=v===null?'—':fmt(v-d.nok);$('ppm'+el.dataset.i).textContent=v===null||v===0?'—':fmt(d.nok/v*1e6);$('export').disabled=days.some(x=>x.checked===''||x.checked===null||!Number.isFinite(x.checked)||x.checked<x.nok)});$('export').disabled=days.length===0||days.some(x=>x.checked===''||x.checked===null||!Number.isFinite(x.checked)||x.checked<x.nok)}
+function cellStyle(fill='FFFFFF',color='111827',bold=false,align='center',size=10){return{fill:{fgColor:{rgb:fill}},font:{name:'Arial',sz:size,bold,color:{rgb:color}},alignment:{horizontal:align,vertical:'center',wrapText:true},border:{top:{style:'thin',color:{rgb:'64748B'}},bottom:{style:'thin',color:{rgb:'64748B'}},left:{style:'thin',color:{rgb:'64748B'}},right:{style:'thin',color:{rgb:'64748B'}}}}}
+function exportPdiReport(){
+ if(!days.length){alert('Read a workbook first.');return}
+ if(days.some(d=>d.checked===''||d.checked===null||!Number.isFinite(Number(d.checked))||Number(d.checked)<d.nok)){alert('Enter valid Total Checked for every date; it must not be less than NOK.');return}
+ if(!rawRejectionMatrix.length){alert('Original REJECTION data is not available. Re-upload the workbook.');return}
+ const wb=XLSX.utils.book_new(),ws={};
+ const monthDate=new Date(days[0].date+'T00:00:00');
+ const summaryChecked=days.reduce((s,d)=>s+Number(d.checked),0),summaryNok=days.reduce((s,d)=>s+d.nok,0),summaryOk=summaryChecked-summaryNok;
+ const header=['DATE','TOTAL CHECKED','TOTAL OK','TOTAL NOK','PPM','WIDTH','ITEM','LENGTH','IPO','BARCODE','UNIT OF MFG','ISSUE / PROBLEM','REQUIRED','RECEIVED','REJ / REW','REMARKS','NCR No.','CORRECTION','CORRECTIVE ACTION','STATUS','INSPECTOR'];
+ const rows=[['SUMMARY',null,null,null,null,null,null,'DAILY PDI REPORT'],['MONTH','TOTAL CHECKED','TOTAL OK','TOTAL NOK','% REJN.','PPM'],[monthDate,summaryChecked,summaryOk,summaryNok,summaryChecked?summaryNok/summaryChecked:0,summaryChecked?summaryNok/summaryChecked*1000000:0],[],['REJECTED / REWORK PART DETAILS'],header];
+ let sourceHeaderRow=-1;for(let r=0;r<Math.min(rawRejectionMatrix.length,20);r++){const candidate=(rawRejectionMatrix[r]||[]).map(normHead);if(candidate.includes('DATE')&&candidate.some(x=>x==='QTY'||x==='QUANTITY')){sourceHeaderRow=r;break;}}
+ if(sourceHeaderRow<0)throw Error('REJECTION sheet DATE/QTY header row could not be identified for export.');
+ const h=(rawRejectionMatrix[sourceHeaderRow]||[]).map(normHead);
+ const ix={date:h.findIndex(x=>x==='DATE'),width:h.findIndex(x=>x==='WIDTH'),length:h.findIndex(x=>x==='LENGTH'),qty:h.findIndex(x=>x==='QTY'||x==='QUANTITY'),ipo:h.findIndex(x=>x==='IPO'),item:h.findIndex(x=>x==='ITEM'),barcode:h.findIndex(x=>x==='BARCODE'),unit:h.findIndex(x=>x==='UNIT'||x==='UNITOFMFG'),reason:h.findIndex(x=>x==='REJECTIONREASON'||x==='REWORKREASON'||x==='ISSUE/PROBLEM'||x==='ISSUEPROBLEM')};
+ const checkedByDate=new Map(days.map(d=>[d.date,d]));
+ const emitted=new Set();
+ for(const sourceRow of rawRejectionMatrix.slice(sourceHeaderRow+1)){
+  if(!sourceRow||!sourceRow.some(v=>v!==null&&v!==''))continue;
+  const dt=parseDateCell(sourceRow[ix.date]);if(!dt)continue;
+  const key=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  const day=checkedByDate.get(key);const first=!emitted.has(key);emitted.add(key);
+  const checked=first&&day?Number(day.checked):null,ok=first&&day?checked-day.nok:null,nok=first&&day?day.nok:null,ppm=first&&day&&checked?day.nok/checked*1000000:null;
+  rows.push([first?dt:'',checked,ok,nok,ppm,sourceRow[ix.width]??'',sourceRow[ix.item]??'',sourceRow[ix.length]??'',sourceRow[ix.ipo]??'',sourceRow[ix.barcode]??'',sourceRow[ix.unit]??'',sourceRow[ix.reason]??'','','','REJECTION','','','','','','']);
+ }
+ // Add production/checking dates that have zero rejection records as well.
+ for(const day of days){
+  if(emitted.has(day.date))continue;
+  const dt=new Date(day.date+'T00:00:00'),checked=Number(day.checked),nok=Number(day.nok||0);
+  rows.push([dt,checked,checked-nok,nok,checked>0?nok/checked*1000000:0,'','','','','','','','','','','','','','','','']);
+  emitted.add(day.date);
+ }
+ const detailRows=rows.slice(6).sort((a,b)=>new Date(a[0])-new Date(b[0]));
+ rows.splice(6,rows.length-6,...detailRows);
+ const end=rows.length;const last='S'+Math.max(6,end);
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Daily PDI Report');
+ const report=wb.Sheets['Daily PDI Report'];
+ const dateMerges=[];let dateGroupStart=6;for(let i=7;i<=rows.length;i++){if(i===rows.length||rows[i][0]!==''){if(i-dateGroupStart>1)dateMerges.push({s:{r:dateGroupStart,c:0},e:{r:i-1,c:0}});dateGroupStart=i;}}
+ report['!merges']=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:0,c:7},e:{r:0,c:11}},{s:{r:4,c:0},e:{r:4,c:20}},...dateMerges];
+ report['!cols']=[{wch:16},{wch:20},{wch:16},{wch:16},{wch:15},{wch:10},{wch:18},{wch:12},{wch:10},{wch:16},{wch:14},{wch:28},{wch:12},{wch:12},{wch:12},{wch:18},{wch:12},{wch:16},{wch:20},{wch:14},{wch:16}];
+ report['!rows']=[{hpt:28},{hpt:30},{hpt:24},{hpt:8},{hpt:24},{hpt:42}];
+ for(let R=0;R<rows.length;R++)for(let C=0;C<21;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(!report[a])continue;report[a].s=R===0?cellStyle('111827','FFFFFF',true,'center',15):R===1||R===5?cellStyle('D6B52B','111827',true,'center',10):R===4?cellStyle('111827','FFFFFF',true,'center',12):R===2?cellStyle('F1F5F9','111827',true,'center',10):cellStyle(R%2?'FFFFFF':'F1F5F9','111827',false,'center',9)}
+ for(let r=6;r<rows.length;r++){const dateCell=report['A'+(r+1)];if(dateCell){dateCell.t='d';dateCell.z='dd-mmm-yyyy';}const p=report['E'+(r+1)];if(p)p.z='0.00';}
+ if(report['A3'])report['A3'].z='mmm-yy';if(report['E3'])report['E3'].z='0.00%';if(report['F3'])report['F3'].z='0.00';
+ report['!autofilter']={ref:'A6:U'+Math.max(6,end)};report['!freeze']={xSplit:0,ySplit:6};
+ report['!pageSetup']={orientation:'landscape',paperSize:9,fitToWidth:1,fitToHeight:0};report['!margins']={left:0.25,right:0.25,top:0.5,bottom:0.5,header:0.2,footer:0.2};report['!printArea']='A1:U'+Math.max(6,end);report['!printOptions']={horizontalCentered:false,verticalCentered:false};
+ const rejectionSheet=XLSX.utils.aoa_to_sheet(rawRejectionMatrix);
+ rejectionSheet['!cols']=(rawRejectionMatrix[1]||[]).map(()=>({wch:18}));
+ rejectionSheet['!autofilter']={ref:'A2:M'+rawRejectionMatrix.length};rejectionSheet['!freeze']={xSplit:0,ySplit:2};
+ for(let C=0;C<(rawRejectionMatrix[1]||[]).length;C++){const a=XLSX.utils.encode_cell({r:1,c:C});if(rejectionSheet[a])rejectionSheet[a].s=cellStyle('D6B52B','111827',true,'center',10)}
+ XLSX.utils.book_append_sheet(wb,rejectionSheet,'REJECTION DATA');
+ XLSX.writeFile(wb,sourceName+'_Daily_PDI_and_Rejection_Report.xlsx');
+}
+$('export').textContent='DOWNLOAD DAILY PDI + COMPLETE REJECTION REPORT';
+$('export').onclick=exportPdiReport;
+</script></body></html>
